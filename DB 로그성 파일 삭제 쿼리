@@ -1,0 +1,224 @@
+-------------------------------------------------------------------------------------------------------------------------------------
+/****** 로그 정리 쿼리																										  ******/
+/****** UiPath 에서 권장하는 로그 대상을 확인하여 정리함							  									  ******/
+-------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+------------------------------- 보유 기간 일자 (공통 변수 )--------------------------------
+DECLARE @NumberOfDaysToKeep INT
+SET @NumberOfDaysToKeep = 365	-- 숫자만큼 보유 권장 365일 이상
+
+------------------------------------------------------------------------------------------
+------------------------------ 대기열(Queue) 삭제 ----------------------------------------
+------------------------------------------------------------------------------------------
+--SELECT COUNT(*)
+--  FROM [UiPath].[dbo].[QueueItems] WITH (NOLOCK)
+-- WHERE status = 3
+--   AND DateDiff(day, CreationTime, GetDate()) > 365;
+BEGIN TRANSACTION
+
+	-- 
+	SELECT ID AS IdToDelete 
+	  INTO #TempDeletedIds 
+	  FROM [UiPath].[dbo].[QueueItems]
+	 WHERE status = 3
+	-- AND TenantId = 1
+	-- AND ReviewStatus != 0
+	   AND DateDiff(day, CreationTime, GetDate()) > @NumberOfDaysToKeep
+
+	-- QueueItemEvents
+	DELETE FROM [UiPath].[dbo].[QueueItemEvents]
+	 WHERE Exists ( SELECT IdToDelete 
+					  FROM #TempDeletedIds 
+					 WHERE IdToDelete = QueueItemId
+				  )
+
+	-- QueueItemComments
+	DELETE FROM [UiPath].[dbo].[QueueItemComments]
+	 WHERE Exists ( SELECT IdToDelete 
+					  FROM #TempDeletedIds 
+					 WHERE IdToDelete = QueueItemId
+				  )
+
+	-- QueueItems
+	DELETE FROM [UiPath].[dbo].[QueueItems]
+	 WHERE Exists ( SELECT IdToDelete 
+					  FROM #TempDeletedIds 
+					 WHERE IdToDelete = [UiPath].[dbo].[QueueItems].[Id]
+				  )
+
+	DROP TABLE #TempDeletedIds
+
+COMMIT TRANSACTION;
+WAITFOR DELAY '0:0:10';
+
+------------------------------------------------------------------------------------------
+------------------------------ 로그  삭제 ------------------------------------------------
+------------------------------------------------------------------------------------------
+ --SELECT COUNT(*)
+ --  FROM [UiPath].[dbo].[Logs] WITH (NOLOCK)
+ -- WHERE 1=1
+ --   AND DateDiff(day, TimeStamp, GetDate()) > 365;
+
+ DELETE FROM [UiPath].[dbo].[Logs]
+  WHERE 1=1
+    AND DateDiff(day, TimeStamp, GetDate()) > @NumberOfDaysToKeep
+;
+COMMIT;
+WAITFOR DELAY '0:0:10';
+
+------------------------------------------------------------------------------------------
+------------------------------ 로봇 라이센스 로그 삭제 -----------------------------------
+------------------------------------------------------------------------------------------
+--SELECT COUNT(*)
+--  FROM [UiPath].[dbo].[RobotLicenseLogs] WITH (NOLOCK)
+-- WHERE EndDate is not null
+--   AND DateDiff(day, EndDate, GetDate()) > 365;
+
+ DELETE FROM [UiPath].[dbo].[RobotLicenseLogs]
+  WHERE EndDate is not null
+    AND DateDiff(day, EndDate, GetDate()) > @NumberOfDaysToKeep
+;
+COMMIT;
+WAITFOR DELAY '0:0:10';
+
+------------------------------------------------------------------------------------------
+------------------------------ 테넌트 알림/사용자 알림 정리 ------------------------------
+------------------------------------------------------------------------------------------
+--SELECT COUNT(*)
+--  FROM [UiPath].[dbo].[TenantNotifications] WITH ( NOLOCK )
+-- WHERE 1=1
+--   AND DateDiff(day, CreationTime, GetDate()) > 365;
+
+
+BEGIN TRANSACTION
+	
+	SELECT ID AS IdToDelete 
+	  INTO #TempDeletedIds 
+	  FROM [UiPath].[dbo].[TenantNotifications]
+	 WHERE 1=1
+	-- AND TenantId = 1
+	   AND DateDiff(day, CreationTime, GetDate()) > @NumberOfDaysToKeep
+
+	-- UserNotifications
+	DELETE FROM [UiPath].[dbo].[UserNotifications]
+	WHERE Exists ( SELECT IdToDelete 
+					 FROM #TempDeletedIds 
+				    WHERE IdToDelete = TenantNotificationId
+				 )
+
+	-- TenantNotifications
+	DELETE FROM [UiPath].[dbo].[TenantNotifications]
+	WHERE Exists ( SELECT IdToDelete 
+					 FROM #TempDeletedIds 
+					WHERE IdToDelete = [UiPath].[dbo].[TenantNotifications].[Id]
+				 )
+
+	DROP TABLE #TempDeletedIds
+
+COMMIT TRANSACTION;
+WAITFOR DELAY '0:0:10';
+
+
+------------------------------------------------------------------------------------------
+------------------------------ Jobs 정리 -------------------------------------------------
+------------------------------------------------------------------------------------------
+--SELECT COUNT(*)
+--  FROM [UiPath].[dbo].[Jobs] WITH (NOLOCK)
+-- WHERE 1=1
+--   AND DateDiff(day, CreationTime, GetDate()) > 365;
+
+DELETE FROM [UiPath].[dbo].[Jobs]
+ WHERE 1=1
+   AND DateDiff(day, CreationTime, GetDate()) > @NumberOfDaysToKeep
+;
+COMMIT;
+WAITFOR DELAY '0:0:10';
+
+------------------------------------------------------------------------------------------
+------------------------------ AuditLogs 및 AuditLogEntities 정리 ------------------------
+------------------------------------------------------------------------------------------
+--SELECT COUNT(*)
+--  FROM [UiPath].[dbo].[AuditLogs] WITH (NOLOCK)
+-- WHERE 1=1
+--  AND DateDiff(day, ExecutionTime, GetDate()) > 365;
+
+BEGIN TRANSACTION
+	-- 
+	SELECT ID as IdToDelete 
+	  INTO #TempDeletedIds 
+	  FROM [UiPath].[dbo].[AuditLogs]
+	 WHERE 1=1
+	-- AND TenantId = 1
+	  AND DateDiff(day, ExecutionTime, GetDate()) > @NumberOfDaysToKeep
+
+	-- AuditLogEntities
+	DELETE FROM [UiPath].[dbo].[AuditLogEntities]
+	WHERE Exists ( SELECT IdToDelete 
+					 FROM #TempDeletedIds 
+					WHERE IdToDelete = AuditLogId)
+	
+	-- AuditLogs
+	DELETE FROM [UiPath].[dbo].[AuditLogs]
+	WHERE Exists ( SELECT IdToDelete 
+					 FROM #TempDeletedIds 
+					WHERE IdToDelete = [UiPath].[dbo].[AuditLogs].[Id])
+	
+	DROP TABLE #TempDeletedIds
+
+COMMIT TRANSACTION;
+WAITFOR DELAY '0:0:10';
+
+------------------------------------------------------------------------------------------
+------------------------------ 작업([Tasks]) 정리 ----------------------------------------
+------------------------------------------------------------------------------------------
+-- (AP 불필요 쌓이지 않는다.)
+--DELETE FROM [UiPath].[dbo].[Tasks] 
+-- WHERE 1=1 
+--   AND DateDiff(day, LastModificationTime, GetDate()) > @NumberOfDaysToKeep
+--COMMIT;
+--WAITFOR DELAY '0:0:10';
+
+
+------------------------------------------------------------------------------------------
+------------------------------ 원장 정리 -------------------------------------------------
+------------------------------------------------------------------------------------------
+
+-- Ledger table cleanup
+--SELECT COUNT(*)
+--  FROM [UiPath].[dbo].[Ledger] WITH (NOLOCK)
+-- WHERE DateDiff(day, CreationTime, GetDate()) > 365;
+
+DELETE FROM [UiPath].[dbo].[Ledger] 
+ WHERE DateDiff(day, CreationTime, GetDate()) > @NumberOfDaysToKeep;
+COMMIT;
+WAITFOR DELAY '0:0:10';
+
+----LedgerDeliveries 테이블 정리 (AP 불필요 쌓이지 않는다.)
+--DELETE FROM [UiPath].[dbo].[LedgerDeliveries] 
+-- WHERE DateDiff(day, LastUpdatedTime, GetDate()) > @NumberOfDaysToKeep ;
+--COMMIT;
+--WAITFOR DELAY '0:0:10';
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+/****** 대용량 처리 ******/
+-------------------------------------------------------------------------------------------------------------------------------------
+/*
+DECLARE @COUNT INT,
+		@MAX INT;
+SET @COUNT = 400;
+SET @MAX = 365;
+
+WHILE (@COUNT > @MAX ) BEGIN	
+	DELETE FROM [UiPath].[dbo].[Logs]
+     WHERE DATEDIFF(day, TimeStamp, GetDate()) > @COUNT
+    ;
+    COMMIT;
+
+	WAITFOR DELAY '0:1:0'
+	SET @COUNT = @COUNT - 1;
+END
+*/
